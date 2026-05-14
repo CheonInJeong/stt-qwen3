@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Qwen3-ASR Contextual STT 실험</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3250;
+      --accent: #5c6ef8;
+      --accent2: #38bdf8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --radius: 12px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Pretendard", "Apple SD Gothic Neo", system-ui, sans-serif;
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-bottom: 32px;
+    }
+
+    .container { max-width: 860px; margin: 0 auto; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+
+    .card-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+
+    label { display: block; font-size: 0.9rem; margin-bottom: 6px; color: var(--text); }
+
+    input[type="text"], textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.95rem;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]:focus, textarea:focus {
+      border-color: var(--accent);
+    }
+
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-danger  { background: var(--red); color: #fff; }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-outline:hover { border-color: var(--accent); }
+
+    .mic-btn {
+      width: 60px; height: 60px;
+      border-radius: 50%;
+      font-size: 1.5rem;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .mic-btn.recording {
+      background: var(--red);
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+      50%       { box-shadow: 0 0 0 12px rgba(239,68,68,0); }
+    }
+
+    .audio-preview {
+      margin-top: 12px;
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    /* ─── Compare grid ─────────────────────────────── */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 600px) { .compare-grid { grid-template-columns: 1fr; } }
+
+    .result-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      min-height: 100px;
+    }
+
+    .result-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .badge-baseline { background: #334155; color: #94a3b8; }
+    .badge-context  { background: #1e3a5f; color: var(--accent2); }
+
+    .result-text {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text);
+      min-height: 28px;
+      word-break: break-word;
+    }
+    .result-text.empty { color: var(--muted); font-weight: 400; font-size: 0.9rem; }
+
+    .latency {
+      margin-top: 10px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    /* ─── Status bar ───────────────────────────────── */
+    #status {
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin: 8px 0 16px;
+      min-height: 20px;
+      transition: color 0.3s;
+    }
+    #status.error { color: var(--red); }
+    #status.ok    { color: var(--green); }
+
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+    /* ─── Single mode result ───────────────────────── */
+    #single-result-card { display: none; }
+    #single-result-text {
+      font-size: 1.15rem;
+      font-weight: 600;
+      min-height: 30px;
+    }
+
+    .file-drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .file-drop-zone:hover,
+    .file-drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(92,110,248,0.05);
+    }
+    .file-drop-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    }
+    .file-drop-zone .hint { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Qwen3-ASR Contextual STT</h1>
+  <p class="subtitle">콜봇 질문 + 음성 → 정확도 비교 실험 (CPU inference)</p>
+
+  <!-- 질문 입력 -->
+  <div class="card">
+    <div class="card-title">① 콜봇 질문 입력</div>
+    <input
+      type="text"
+      id="questionInput"
+      placeholder="예: 이 전화번호 맞으십니까?"
+      value="이 전화번호 맞으십니까?"
+    />
+  </div>
+
+  <!-- 음성 입력 -->
+  <div class="card">
+    <div class="card-title">② 음성 입력</div>
+    <div class="row" style="align-items:center; margin-bottom:12px;">
+      <button class="btn btn-primary mic-btn" id="micBtn" title="녹음 시작/정지">🎙️</button>
+      <div>
+        <div id="micStatus" style="font-size:0.85rem; color:var(--muted);">마이크 버튼을 눌러 녹음을 시작하세요.</div>
+        <div id="recTimer" style="font-size:0.8rem; color:var(--accent); margin-top:4px;"></div>
+      </div>
+    </div>
+
+    <hr class="divider" />
+
+    <div class="file-drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept="audio/*" />
+      <div>📂 WAV / MP3 / OGG 파일 업로드</div>
+      <div class="hint">파일을 여기에 끌어다 놓거나 클릭하세요</div>
+    </div>
+    <div id="fileName" style="font-size:0.8rem; color:var(--accent); margin-top:8px;"></div>
+
+    <audio id="audioPreview" class="audio-preview" controls style="display:none; margin-top:12px;"></audio>
+  </div>
+
+  <!-- 실행 버튼 -->
+  <div class="card">
+    <div class="card-title">③ STT 실행</div>
+    <div class="row">
+      <button class="btn btn-primary" id="runCompareBtn">⚡ 비교 실행 (baseline vs context)</button>
+      <button class="btn btn-outline" id="runBaselineBtn">audio only</button>
+      <button class="btn btn-outline" id="runContextBtn">question + audio</button>
+    </div>
+  </div>
+
+  <div id="status"></div>
+
+  <!-- 비교 결과 -->
+  <div class="card" id="compareCard" style="display:none;">
+    <div class="card-title">④ 비교 결과</div>
+    <div class="compare-grid">
+      <div class="result-box">
+        <div class="result-label">
+          <span class="badge badge-baseline">Baseline</span>
+          audio only
+        </div>
+        <div class="result-text empty" id="baselineText">—</div>
+        <div class="latency" id="baselineLatency"></div>
+      </div>
+      <div class="result-box">
+        <div class="result-label">
+          <span class="badge badge-context">Context</span>
+          question + audio
+        </div>
+        <div class="result-text empty" id="contextText">—</div>
+        <div class="latency" id="contextLatency"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 단일 모드 결과 -->
+  <div class="card" id="single-result-card">
+    <div class="card-title">④ 결과</div>
+    <div class="result-text" id="single-result-text"></div>
+    <div class="latency" id="singleLatency"></div>
+  </div>
+</div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let mediaRecorder = null;
+let audioChunks = [];
+let recordedBlob = null;
+let uploadedFile = null;
+let timerInterval = null;
+let recSeconds = 0;
+
+const $ = id => document.getElementById(id);
+
+// ─── Mic recording ────────────────────────────────────────────────────────────
+$('micBtn').addEventListener('click', async () => {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    stopRecording();
+  } else {
+    await startRecording();
+  }
+});
+
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+
+    mediaRecorder.ondataavailable = e => {
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+      // MediaRecorder가 실제로 저장한 포맷(WebM 또는 OGG)으로 Blob 생성
+      const rawBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+
+      // Web Audio API로 브라우저가 직접 디코딩한 뒤 16kHz WAV로 재인코딩
+      // → 서버(libsndfile/librosa)가 반드시 읽을 수 있는 포맷으로 변환
+      try {
+        const arrayBuffer = await rawBlob.arrayBuffer();
+        // sampleRate: 16000 을 지정하면 브라우저가 자동으로 리샘플링해줍니다
+        const audioCtx = new AudioContext({ sampleRate: 16000 });
+        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        audioCtx.close();
+        recordedBlob = encodeWav(audioBuffer);
+      } catch (err) {
+        // 변환 실패 시 원본 그대로 전송 (서버에서 ffmpeg 등으로 처리)
+        console.warn('WAV 변환 실패, 원본 전송:', err);
+        recordedBlob = rawBlob;
+      }
+
+      uploadedFile = null;
+      const url = URL.createObjectURL(recordedBlob);
+      const preview = $('audioPreview');
+      preview.src = url;
+      preview.style.display = 'block';
+      $('fileName').textContent = `녹음 완료 (${formatTime(recSeconds)}) — WAV`;
+      stream.getTracks().forEach(t => t.stop());
+    };
+
+    mediaRecorder.start();
+    $('micBtn').classList.add('recording');
+    $('micBtn').textContent = '⏹';
+    $('micStatus').textContent = '녹음 중...';
+    recSeconds = 0;
+    timerInterval = setInterval(() => {
+      recSeconds++;
+      $('recTimer').textContent = formatTime(recSeconds);
+    }, 1000);
+  } catch (err) {
+    setStatus('마이크 접근 권한이 필요합니다: ' + err.message, 'error');
+  }
+}
+
+function stopRecording() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  $('recTimer').textContent = '';
+  $('micBtn').classList.remove('recording');
+  $('micBtn').textContent = '🎙️';
+  $('micStatus').textContent = '녹음이 완료되었습니다.';
+  mediaRecorder.stop();
+}
+
+// ─── File upload ──────────────────────────────────────────────────────────────
+$('fileInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  handleFile(file);
+});
+
+const dropZone = $('dropZone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
+
+function handleFile(file) {
+  uploadedFile = file;
+  recordedBlob = null;
+  const url = URL.createObjectURL(file);
+  const preview = $('audioPreview');
+  preview.src = url;
+  preview.style.display = 'block';
+  $('fileName').textContent = `📄 ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+}
+
+// ─── STT calls ────────────────────────────────────────────────────────────────
+$('runCompareBtn').addEventListener('click', () => runSTT('compare'));
+$('runBaselineBtn').addEventListener('click', () => runSTT('baseline'));
+$('runContextBtn').addEventListener('click', () => runSTT('context'));
+
+async function runSTT(mode) {
+  const audioData = recordedBlob || uploadedFile;
+  if (!audioData) {
+    setStatus('음성을 먼저 녹음하거나 파일을 업로드하세요.', 'error'); return;
+  }
+
+  const question = $('questionInput').value.trim();
+  if ((mode === 'context' || mode === 'compare') && !question) {
+    setStatus('질문 텍스트를 입력하세요.', 'error'); return;
+  }
+
+  setLoading(true);
+  hideResults();
+
+  try {
+    if (mode === 'compare') {
+      const data = await postAudio('/stt/compare', audioData, question);
+      showCompare(data);
+    } else if (mode === 'baseline') {
+      const data = await postAudio('/stt', audioData, null);
+      showSingle(data, 'baseline');
+    } else {
+      const data = await postAudio('/stt/context', audioData, question);
+      showSingle(data, 'context');
+    }
+    setStatus('완료', 'ok');
+  } catch (err) {
+    setStatus('오류: ' + err.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function postAudio(endpoint, audioData, question) {
+  const form = new FormData();
+  const filename = audioData instanceof File ? audioData.name : 'recording.wav';
+  form.append('audio', audioData, filename);
+  if (question !== null) form.append('question', question);
+
+  const res = await fetch(endpoint, { method: 'POST', body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
+// ─── Result display ───────────────────────────────────────────────────────────
+function showCompare(data) {
+  const { baseline, context } = data;
+  $('compareCard').style.display = 'block';
+
+  const bt = $('baselineText');
+  bt.textContent = baseline.text || '(빈 결과)';
+  bt.classList.toggle('empty', !baseline.text);
+  $('baselineLatency').textContent = `⏱ ${baseline.latency_sec}s`;
+
+  const ct = $('contextText');
+  ct.textContent = context.text || '(빈 결과)';
+  ct.classList.toggle('empty', !context.text);
+  $('contextLatency').textContent = `⏱ ${context.latency_sec}s`;
+}
+
+function showSingle(data, mode) {
+  $('single-result-card').style.display = 'block';
+  $('single-result-text').textContent = data.text || '(빈 결과)';
+  $('singleLatency').textContent =
+    `⏱ ${data.latency_sec}s  |  모드: ${mode === 'context' ? 'question + audio' : 'audio only'}`;
+}
+
+function hideResults() {
+  $('compareCard').style.display = 'none';
+  $('single-result-card').style.display = 'none';
+}
+
+// ─── UI helpers ───────────────────────────────────────────────────────────────
+function setStatus(msg, type = '') {
+  const el = $('status');
+  el.className = type;
+  el.innerHTML = type === '' || type === 'ok'
+    ? msg
+    : msg;
+  if (type === 'ok') setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 3000);
+}
+
+function setLoading(on) {
+  if (on) {
+    $('status').innerHTML = '<span class="spinner"></span>추론 중...';
+    $('status').className = '';
+  }
+  [$('runCompareBtn'), $('runBaselineBtn'), $('runContextBtn')]
+    .forEach(b => b.disabled = on);
+}
+
+function formatTime(s) {
+  const m = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+}
+
+// ─── WAV 인코더 ───────────────────────────────────────────────────────────────
+// AudioBuffer(브라우저 내부 오디오 데이터)를 표준 WAV 파일 Blob으로 변환합니다.
+// WAV는 헤더(44바이트) + PCM 샘플 데이터로 구성됩니다.
+function encodeWav(audioBuffer) {
+  const numChannels = 1;                    // 모노
+  const sampleRate  = audioBuffer.sampleRate; // AudioContext에서 설정한 16000Hz
+  const bitDepth    = 16;                   // 16비트 PCM (CD 품질)
+
+  // 채널 0(Left)의 샘플 배열 가져오기. 값은 -1.0 ~ 1.0 사이의 실수입니다.
+  const floatSamples = audioBuffer.getChannelData(0);
+
+  // 실수(-1~1)를 16비트 정수(-32768~32767)로 변환
+  const pcmSamples = new Int16Array(floatSamples.length);
+  for (let i = 0; i < floatSamples.length; i++) {
+    const clamped = Math.max(-1, Math.min(1, floatSamples[i]));
+    pcmSamples[i] = clamped < 0 ? clamped * 32768 : clamped * 32767;
+  }
+
+  // WAV 파일 = 44바이트 헤더 + PCM 데이터
+  const wavBuffer = new ArrayBuffer(44 + pcmSamples.byteLength);
+  const v = new DataView(wavBuffer);
+
+  // ── RIFF 헤더 ──
+  writeStr(v, 0,  'RIFF');
+  v.setUint32(4,  36 + pcmSamples.byteLength, true); // 전체 파일 크기 - 8
+  writeStr(v, 8,  'WAVE');
+
+  // ── fmt 청크 (오디오 포맷 정보) ──
+  writeStr(v, 12, 'fmt ');
+  v.setUint32(16, 16, true);           // fmt 청크 크기 (항상 16)
+  v.setUint16(20, 1,  true);           // 포맷 코드 1 = PCM
+  v.setUint16(22, numChannels, true);  // 채널 수
+  v.setUint32(24, sampleRate,  true);  // 샘플레이트 (16000)
+  v.setUint32(28, sampleRate * numChannels * bitDepth / 8, true); // 초당 바이트 수
+  v.setUint16(32, numChannels * bitDepth / 8, true);              // 샘플당 바이트 수
+  v.setUint16(34, bitDepth, true);     // 비트 깊이 (16)
+
+  // ── data 청크 (실제 음성 데이터) ──
+  writeStr(v, 36, 'data');
+  v.setUint32(40, pcmSamples.byteLength, true);
+  new Int16Array(wavBuffer, 44).set(pcmSamples);
+
+  return new Blob([wavBuffer], { type: 'audio/wav' });
+}
+
+function writeStr(view, offset, str) {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
+}
+</script>
+</body>
+</html>
