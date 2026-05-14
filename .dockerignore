@@ -1,0 +1,20 @@
+# 가상환경 (컨테이너 안에서 새로 설치하므로 필요 없음)
+.venv/
+
+# 파이썬 캐시
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 학습 데이터 & 파인튜닝 모델 (볼륨으로 마운트되므로 이미지에 포함 불필요)
+data/
+finetuned/
+
+# git
+.git/
+.gitignore
+
+# 기타
+*.md
+.DS_Store

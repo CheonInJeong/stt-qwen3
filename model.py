@@ -194,24 +194,45 @@ class QwenASRModel:
 # 요청이 들어올 때마다 매번 로드하면 너무 느립니다.
 # 싱글톤 패턴은 "객체를 딱 하나만 만들고, 계속 재사용"하는 설계 방식입니다.
 
-# 모듈 수준 변수. 처음엔 None(비어있음)으로 시작합니다.
+# ─────────────────────────────────────────────────────────────────────────────
+# 싱글톤 + 동적 모델 교체
+# ─────────────────────────────────────────────────────────────────────────────
+# _current_model_id: 현재 사용할 모델 경로. 처음엔 기본 모델(Qwen3-ASR-0.6B).
+# _model_instance  : 로드된 모델 객체. None이면 아직 로드 안 됨.
+
 _model_instance: Optional[QwenASRModel] = None
+_current_model_id: str = MODEL_ID
 
 
 def get_model() -> QwenASRModel:
     """
-    모델 인스턴스를 반환합니다. 아직 로드되지 않았으면 최초 1회 로드합니다.
-    이후 호출부터는 이미 만들어진 객체를 즉시 반환합니다.
-
-    [global 키워드란?]
-    함수 안에서 함수 밖에 정의된 변수(_model_instance)를 수정할 때 필요합니다.
-    global 선언이 없으면 파이썬은 함수 안에 새 변수를 만들어버립니다.
+    현재 선택된 모델 인스턴스를 반환합니다.
+    처음 호출하거나 set_model() 이후 첫 호출이면 모델을 로드합니다.
     """
     global _model_instance
-
     if _model_instance is None:
-        # 아직 모델이 없으면 새로 만듭니다. (최초 1회만 실행됩니다)
-        _model_instance = QwenASRModel()
-
-    # 이미 있으면 그대로 반환합니다.
+        _model_instance = QwenASRModel(model_id=_current_model_id)
     return _model_instance
+
+
+def set_model(new_model_id: str) -> None:
+    """
+    사용할 모델을 교체합니다.
+
+    기존 모델 인스턴스를 버리고 None으로 초기화합니다.
+    다음 get_model() 호출 시 새 모델이 로드됩니다.
+
+    [왜 즉시 로드하지 않나?]
+    모델 로드는 수십 초가 걸립니다.
+    API 요청이 왔을 때 로드하면 첫 번째 요청만 느리고 이후엔 빠릅니다.
+    (lazy loading 패턴)
+    """
+    global _model_instance, _current_model_id
+    _current_model_id = new_model_id
+    _model_instance = None  # 다음 get_model() 호출 시 새로 로드됩니다
+    logger.info(f"모델 교체 예정: {new_model_id}")
+
+
+def get_current_model_id() -> str:
+    """현재 선택된 모델 ID(경로)를 반환합니다."""
+    return _current_model_id

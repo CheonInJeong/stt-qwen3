@@ -1,0 +1,18 @@
+services:
+  stt:
+    build: .
+    image: qwen3-asr-stt:latest
+    container_name: qwen3-stt
+    ports:
+      - "8001:8001"       # 호스트:컨테이너 — http://localhost:8001 로 접속
+    volumes:
+      # 수집한 학습 데이터 (컨테이너를 삭제해도 데이터 유지)
+      - ./data:/app/data
+      # 파인튜닝된 모델들 (여러 run_타임스탬프 폴더가 저장됨)
+      - ./finetuned:/app/finetuned
+      # HuggingFace 모델 캐시
+      # 이미 로컬에 모델이 있으면 아래 줄을 활성화하세요:
+      # - ~/.cache/huggingface:/root/.cache/huggingface
+    restart: unless-stopped   # 컨테이너가 비정상 종료되면 자동 재시작
+    environment:
+      - HF_HOME=/root/.cache/huggingface
